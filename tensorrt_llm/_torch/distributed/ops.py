@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 from torch import nn
 
-from tensorrt_llm._utils import mpi_barrier
+from tensorrt_llm._utils import mpi_barrier, mpi_disabled
 from tensorrt_llm.bindings.internal.runtime import McastGPUBuffer
 from tensorrt_llm.functional import (AllReduceFusionOp, AllReduceParams,
                                      AllReduceStrategy, MoEAllReduceParams)
@@ -181,12 +181,9 @@ def allgather(
                 val.shape[dim] == sizes[mapping.tp_rank] for val in input
                 if val is not None
             ])
-
-    disable_mpi = os.environ.get("TLLM_DISABLE_MPI") == "1"
-
     # Inputs are reshaped in this way to pass necessary shape information to the allgather op
     if isinstance(input, torch.Tensor):
-        if disable_mpi:
+        if mpi_disabled():
             torch_op = torch.ops.trtllm.allgather_pg
         else:
             torch_op = torch.ops.trtllm.allgather
@@ -195,7 +192,7 @@ def allgather(
         input = input.contiguous().view(-1, output_info['numel_base'])
     else:
         input, valid = filter_valid_input(input)
-        if disable_mpi:
+        if mpi_disabled():
             torch_op = torch.ops.trtllm.allgather_list_pg
         else:
             torch_op = torch.ops.trtllm.allgather_list
@@ -206,7 +203,7 @@ def allgather(
             for val, val_info in zip(input, output_info)
         ]
 
-    if disable_mpi:
+    if mpi_disabled():
         output = torch_op(input, sizes, mapping.tp_group,
                           mapping.tp_group_pg.boxed())
     else:
@@ -267,10 +264,8 @@ def reducescatter(
             x = torch.cat([x.reshape(-1, x_info['numel_base']) for x in x_list])
         return x
 
-    disable_mpi = os.environ.get("TLLM_DISABLE_MPI") == "1"
-
     if isinstance(input, torch.Tensor):
-        if disable_mpi:
+        if mpi_disabled():
             torch_op = torch.ops.trtllm.reducescatter_pg
         else:
             torch_op = torch.ops.trtllm.reducescatter
@@ -278,7 +273,7 @@ def reducescatter(
         input = convert_input(input, output_info)
     else:
         input, valid = filter_valid_input(input)
-        if disable_mpi:
+        if mpi_disabled():
             torch_op = torch.ops.trtllm.reducescatter_list_pg
         else:
             torch_op = torch.ops.trtllm.reducescatter_list
@@ -288,7 +283,7 @@ def reducescatter(
             for val, val_info in zip(input, output_info)
         ]
 
-    if disable_mpi:
+    if mpi_disabled():
         output = torch_op(input, sizes, mapping.tp_group,
                           mapping.tp_group_pg.boxed())
     else:
@@ -464,7 +459,7 @@ class AllReduce(nn.Module):
         self.workspace = None
         self.strategy = strategy
         self.mnnvl_allreduce = None
-        self._disable_mpi = os.environ.get("TLLM_DISABLE_MPI") == "1"
+        self._disable_mpi = mpi_disabled()
 
         self.all_reduce_op = torch.ops.trtllm.allreduce_pg if self._disable_mpi else torch.ops.trtllm.allreduce
 

@@ -1,7 +1,6 @@
 import copy
 import enum
 import math
-import os
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from typing import Dict, List, Optional, Set, Tuple, Union
@@ -10,6 +9,7 @@ import torch
 
 import tensorrt_llm
 import tensorrt_llm.bindings
+from tensorrt_llm._utils import mpi_disabled
 from tensorrt_llm.bindings.BuildInfo import ENABLE_MULTI_DEVICE
 from tensorrt_llm.lora_helper import LoraConfig
 from tensorrt_llm.lora_manager import LoraManager, LoraModelConfig
@@ -542,7 +542,7 @@ class KVCacheManager(BaseResourceManager):
 
         if mapping.world_size > 1:
             # make sure all ranks use same value for maxTokens
-            if os.environ.get("TLLM_DISABLE_MPI") == "1":
+            if mpi_disabled():
                 max_tokens = mapping.dist.all_reduce(
                     max_tokens, op=torch.distributed.ReduceOp.MIN)
             else:

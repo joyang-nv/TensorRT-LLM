@@ -1,7 +1,6 @@
 import dataclasses
 import datetime
 import heapq
-import os
 import queue
 import threading
 import time
@@ -11,7 +10,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 
-from tensorrt_llm._utils import nvtx_range
+from tensorrt_llm._utils import mpi_disabled, nvtx_range
 from tensorrt_llm.mapping import CpType
 
 from ..distributed import Distributed
@@ -70,7 +69,7 @@ class ExecutorRequestQueue:
         self.is_shutdown = False
         self.should_exclude_last_generation_logits = False
 
-        self._disable_mpi = os.environ.get("TLLM_DISABLE_MPI") == "1"
+        self._disable_mpi = mpi_disabled()
 
     def _get_from_request_queue(
             self,

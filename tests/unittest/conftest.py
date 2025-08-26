@@ -171,7 +171,7 @@ def _maybe_force_ray(request, monkeypatch, ray_mode):
         class LLMProxy(cls):
 
             def __init__(self, *args, **kwargs):
-                kwargs["executor_type"] = "ray"
+                kwargs["orchestrator_type"] = "ray"
                 super().__init__(*args, **kwargs)
 
         return LLMProxy

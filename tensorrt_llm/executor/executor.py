@@ -370,7 +370,7 @@ class GenerationExecutor(ABC):
         is_llm_executor: Optional[bool] = None,
         lora_config: Optional[LoraConfig] = None,
         garbage_collection_gen0_threshold: Optional[int] = None,
-        executor_type: Optional[str] = None,
+        orchestrator_type: Optional[str] = None,
         **args,
     ) -> Union["GenerationExecutorProxy", "GenerationExecutorWorker"]:
         # local imports to avoid cyclic importing
@@ -403,14 +403,14 @@ class GenerationExecutor(ABC):
         if lora_config:
             worker_kwargs["lora_config"] = lora_config
 
-        if executor_type == "ray":
+        if orchestrator_type == "ray":
             return GenerationExecutor._create_ray_executor(
                 worker_kwargs,
                 model_world_size,
                 postproc_worker_config,
                 is_llm_executor=is_llm_executor,
                 tp_size=args.get("tp_size", 1))
-        elif executor_type is not None:
+        elif orchestrator_type is not None:
             assert False, "Invalid executor type"
 
         # The case where the Python main process is launched by mpirun

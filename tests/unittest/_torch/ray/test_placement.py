@@ -41,7 +41,7 @@ def test_bundle_indices():
                            "TinyLlama-1.1B-Chat-v1.0"),
         kv_cache_config=KvCacheConfig(free_gpu_memory_fraction=0.1),
         tensor_parallel_size=2,
-        executor_type="ray",
+        orchestrator_type="ray",
     )
 
     infer_worker_uuids = ray.get(llm.collective_rpc.remote("report_device_id"))
@@ -53,7 +53,8 @@ def test_cuda_visible_device():
     """Placement via cuda_visible_device"""
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    llm = LLM(model="TinyLlama/TinyLlama-1.1B-Chat-v1.0", executor_type="ray")
+    llm = LLM(model="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+              orchestrator_type="ray")
 
     infer_actor_uuids = llm.collective_rpc("report_device_id")
 

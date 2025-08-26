@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import array
-import os
 import struct
 import sys
 from typing import List, Tuple
+
+from tensorrt_llm._utils import mpi_disabled
 
 try:
     from cuda.bindings import driver as cuda
@@ -102,14 +103,13 @@ class IpcMemory:
         Returns a list of buffer pointers, buffers[i] is a handle to the corresponding buffer residing on GPU #i.
         Call close_ipc_handle with the *buffer*.
         """
-        disable_mpi = os.environ.get("TLLM_DISABLE_MPI") == "1"
 
         def align_size(size, alignment):
             if (size % alignment) != 0:
                 size += alignment - (size % alignment)
             return size
 
-        if disable_mpi:
+        if mpi_disabled():
             allgather = mapping.dist.tp_allgather
         else:
             comm = mpi_comm().Split(

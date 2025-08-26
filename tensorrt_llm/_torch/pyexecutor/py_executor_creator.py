@@ -1,6 +1,5 @@
 import copy
 import enum
-import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from itertools import chain
@@ -214,7 +213,8 @@ def create_py_executor(
 
     mapping = _get_mapping(executor_config)
 
-    if os.environ.get("TLLM_DISABLE_MPI") == "1":
+    from tensorrt_llm._utils import mpi_disabled
+    if mpi_disabled():
         dist = TorchDist(mapping=mapping)
     else:
         dist = MPIDist(mapping=mapping)

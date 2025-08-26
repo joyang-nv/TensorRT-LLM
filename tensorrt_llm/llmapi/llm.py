@@ -122,7 +122,7 @@ class BaseLLM:
                  **kwargs: Any) -> None:
 
         self._executor_cls = kwargs.pop("executor_cls", GenerationExecutor)
-        self._executor_type = kwargs.pop("executor_type", None)
+        self._orchestrator_type = kwargs.pop("orchestrator_type", None)
         self._llm_id = None
 
         log_level = logger.level
@@ -133,7 +133,7 @@ class BaseLLM:
             if backend == "pytorch":
                 logger.info("Using LLM with PyTorch backend")
                 llm_args_cls = TorchLlmArgs
-                if self._executor_type == "ray":
+                if self._orchestrator_type == "ray":
                     os.environ["TLLM_DISABLE_MPI"] = "1"
             elif backend == '_autodeploy':
                 logger.info("Using LLM with AutoDeploy backend")
@@ -1109,7 +1109,7 @@ class _TorchLLM(BaseLLM):
             lora_config=self.args.lora_config,
             garbage_collection_gen0_threshold=self.args.
             garbage_collection_gen0_threshold,
-            executor_type=self._executor_type,
+            orchestrator_type=self._orchestrator_type,
             tp_size=self.args.tensor_parallel_size,
         )
 

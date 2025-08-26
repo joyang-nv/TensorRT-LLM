@@ -1,5 +1,4 @@
 import os
-import socket
 from abc import ABC, abstractmethod
 from functools import wraps
 from typing import Optional, ValuesView
@@ -14,9 +13,9 @@ from torch.distributed.distributed_c10d import (_object_to_tensor,
                                                 _tensor_to_object)
 
 from tensorrt_llm._utils import (mpi_allgather, mpi_barrier, mpi_broadcast,
-                                 mpi_comm, mpi_isend, mpi_isend_object,
-                                 mpi_recv, mpi_recv_object, mpi_send,
-                                 mpi_send_object)
+                                 mpi_comm, mpi_disabled, mpi_isend,
+                                 mpi_isend_object, mpi_recv, mpi_recv_object,
+                                 mpi_send, mpi_send_object)
 from tensorrt_llm.logger import logger
 from tensorrt_llm.mapping import Mapping
 
@@ -188,11 +187,6 @@ class TorchDist(Distributed):
         pg_broker.init_store(self.default_store)
 
         self.tp_group = self.mapping.tp_group
-
-    def _get_free_port(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('', 0))
-            return s.getsockname()[1]
 
     def setup_local_comm(self):
         self._get_cluster_info()
@@ -528,7 +522,7 @@ _pp_comm = None
 def init_pp_comm(mapping):
     """Initialize PPComm once at startup"""
     global _pp_comm
-    if os.environ.get("TLLM_DISABLE_MPI") == "1":
+    if mpi_disabled():
         _pp_comm = PPCommTorch(mapping)
     else:
         _pp_comm = PPComm(mapping)

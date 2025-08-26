@@ -19,6 +19,7 @@ import json
 import linecache
 import math
 import os
+import socket
 import struct
 import tempfile
 import trace
@@ -462,6 +463,12 @@ def dim_resolve_negative(dim, ndim):
     return tuple(pos)
 
 
+def get_free_port():
+    with socket.socket() as sock:
+        sock.bind(("", 0))
+        return sock.getsockname()[1]
+
+
 # mpi4py only exports MPI_COMM_TYPE_SHARED, so we define OMPI_COMM_TYPE_HOST here
 OMPI_COMM_TYPE_HOST = 9
 
@@ -484,8 +491,13 @@ def local_mpi_comm():
     return local_comm
 
 
+def mpi_disabled() -> bool:
+    """True if TLLM_DISABLE_MPI is set to "1", False otherwise."""
+    return os.environ.get("TLLM_DISABLE_MPI") == "1"
+
+
 def mpi_rank():
-    if os.environ.get("TLLM_DISABLE_MPI") == "1":
+    if mpi_disabled():
         try:
             return torch.distributed.get_rank()
         except ValueError:
@@ -496,7 +508,7 @@ def mpi_rank():
 
 def global_mpi_rank():
     # TODO WAR for controller to work in slurm pmix env
-    if os.environ.get("TLLM_DISABLE_MPI") == "1":
+    if mpi_disabled():
         assert not (dist.is_available() and dist.is_initialized()), (
             "Please deprceate all usages of global_mpi_rank() in Ray migration except in controller,"
             "which will be cleaned up later.")

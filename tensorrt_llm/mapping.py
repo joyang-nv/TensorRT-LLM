@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
 from enum import IntEnum
 from typing import List
 
@@ -20,6 +19,7 @@ import torch
 from torch.distributed import get_process_group_ranks
 from torch.distributed.device_mesh import init_device_mesh
 
+from tensorrt_llm._utils import mpi_disabled
 from tensorrt_llm.logger import logger
 
 
@@ -240,7 +240,7 @@ class Mapping(object):
 
         # For Ray path. store a reference to TorchDist
         self._dist = None
-        self._disable_mpi = os.environ.get("TLLM_DISABLE_MPI") == "1"
+        self._disable_mpi = mpi_disabled()
 
         # TODO: can deprecate if moving to DeviceMesh
         self._pp_groups = []

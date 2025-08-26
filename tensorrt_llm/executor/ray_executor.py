@@ -1,5 +1,4 @@
 import os
-import socket
 from typing import Dict, List, Tuple
 
 import ray
@@ -8,6 +7,7 @@ from ray.util.placement_group import (PlacementGroup,
                                       get_current_placement_group,
                                       placement_group)
 
+from tensorrt_llm._utils import get_free_port
 from tensorrt_llm.logger import logger
 
 from .._utils import nvtx_range_debug
@@ -21,14 +21,6 @@ from .result import (GenerationResult, IterationResult, RayAsyncQueue,
 __all__ = [
     "RayExecutor",
 ]
-
-
-def get_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))  # Bind to port 0 to get a random free port
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
 
 
 class RayExecutor(GenerationExecutor):

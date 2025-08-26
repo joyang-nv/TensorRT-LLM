@@ -53,7 +53,7 @@ cache_transceiver_config:
     max_tokens_in_buffer: 2048
 disable_overlap_scheduler: true
 # Ray executor configuration
-executor_type: "ray"
+orchestrator_type: "ray"
 EOF
 else
     cat > extra_llm_config.yaml << EOF
@@ -62,7 +62,7 @@ cache_transceiver_config:
     backend: "UCX"
     max_tokens_in_buffer: 2048
 disable_overlap_scheduler: true
-# Using default executor MPI (no executor_type specified)
+# Using default executor MPI (no orchestrator_type specified)
 EOF
 fi
 

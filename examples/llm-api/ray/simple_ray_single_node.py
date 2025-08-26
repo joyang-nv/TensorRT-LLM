@@ -167,7 +167,7 @@ if __name__ == "__main__":
 
         config = base_config.copy()
         config["model"] = model_name
-        config["executor_type"] = "ray"
+        config["orchestrator_type"] = "ray"
         del config["name"]
         generated_text[base_config["name"]] = run_llm_with_config(
             config, prompts)

@@ -82,7 +82,7 @@ class TRTLLMBenchmark:
         }
 
         if self.use_ray_executor:
-            config['executor_type'] = 'ray'
+            config['orchestrator_type'] = 'ray'
             self.logger.info("Ray executor configuration enabled")
 
         config_path = self.output_dir / 'configs' / 'bench_config.yaml'
@@ -133,7 +133,18 @@ class TRTLLMBenchmark:
 
         self.logger.info(f"Running benchmark: {config_name}")
 
+        env = os.environ.copy()
+        env['TLLM_PROFILE_START_STOP'] = '0-1000'
+        env['TLLM_PROFILE_RECORD_GC'] = '1'
+
         cmd = [
+            'nsys',
+            'profile',
+            '-o',
+            './profile.nsys-rep',
+            '-c',
+            'cudaProfilerApi',
+            '--capture-range-end="repeat[]"',
             'trtllm-bench',
             f'--model={self.model_name}'
             if self.model_name is not None else '--model=dummy_model',
@@ -165,6 +176,7 @@ class TRTLLMBenchmark:
                 result = subprocess.run(cmd,
                                         stdout=f,
                                         stderr=subprocess.STDOUT,
+                                        env=env,
                                         text=True)
 
             success = result.returncode == 0

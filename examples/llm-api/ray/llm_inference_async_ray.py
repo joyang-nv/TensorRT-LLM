@@ -1,15 +1,25 @@
-# Copy from llm_inference_async.py for testing Ray + Async LLM API
-# Will remove later on.
+# Generate text asynchronously with Ray orchestrator.
 import asyncio
 
 from tensorrt_llm import LLM, SamplingParams
+from tensorrt_llm.llmapi import KvCacheConfig
 
 
 def main():
+    # Configure KV cache memory usage fraction.
+    kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.5,
+                                    max_tokens=4096,
+                                    enable_block_reuse=True)
+
     # model could accept HF model name or a path to local HF model.
-    llm = LLM(model="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-              tensor_parallel_size=2,
-              executor_type="ray")
+    llm = LLM(
+        model="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        tensor_parallel_size=2,
+        kv_cache_config=kv_cache_config,
+        max_seq_len=1024,
+        max_batch_size=1,
+        orchestrator_type="ray",  # Enable Ray orchestrator
+    )
 
     # Sample prompts.
     prompts = [
@@ -36,7 +46,6 @@ def main():
 
     # Got output like follows:
     # Prompt: 'Hello, my name is', Generated text: '\n\nJane Smith. I am a student pursuing my degree in Computer Science at [university]. I enjoy learning new things, especially technology and programming'
-    # Prompt: 'The president of the United States is', Generated text: 'likely to nominate a new Supreme Court justice to fill the seat vacated by the death of Antonin Scalia. The Senate should vote to confirm the'
     # Prompt: 'The capital of France is', Generated text: 'Paris.'
     # Prompt: 'The future of AI is', Generated text: 'an exciting time for us. We are constantly researching, developing, and improving our platform to create the most advanced and efficient model available. We are'
 
