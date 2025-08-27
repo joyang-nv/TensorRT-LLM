@@ -8,7 +8,6 @@ from typing import Dict, Optional, Union
 import ray
 import torch
 
-from .._torch.virtual_memory import materialize_with_tag, release_with_tag
 from .._utils import mpi_rank
 from ..bindings import executor as tllm
 from ..builder import ConfigEncoder, Engine, EngineConfig
@@ -356,18 +355,6 @@ class RayGPUWorker(GenerationExecutor):
             return req_id
         except Exception as e:
             raise RequestError(str(e)) from e
-
-    @staticmethod
-    def sleep(*tags: str):
-        torch.cuda.synchronize()
-        release_with_tag(*tags)
-        torch.cuda.synchronize()
-
-    @staticmethod
-    def wakeup(*tags: str):
-        torch.cuda.synchronize()
-        materialize_with_tag(*tags)
-        torch.cuda.synchronize()
 
     def submit(self, request: GenerationRequest) -> GenerationResult:
         raise NotImplementedError("Ray GPU worker does not support submit")

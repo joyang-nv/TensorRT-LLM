@@ -1,6 +1,5 @@
 import bisect
 import contextlib
-import copy
 import functools
 import gc
 import inspect

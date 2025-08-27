@@ -2203,10 +2203,6 @@ class TorchLlmArgs(BaseLlmArgs):
             return 'pytorch'
         return v
 
-    enable_sleep: bool = Field(
-        default=False,
-        description="Enable extra setup to support sleep feature.")
-
     @field_validator('load_format', mode='before')
     @classmethod
     def convert_load_format(cls, v):
@@ -2444,8 +2440,7 @@ class TorchLlmArgs(BaseLlmArgs):
             attention_dp_batching_wait_iters=self.attention_dp_config.
             batching_wait_iters if self.attention_dp_config is not None else
             AttentionDpConfig.model_fields['batching_wait_iters'].default,
-            batch_wait_timeout_ms=self.batch_wait_timeout_ms,
-            enable_sleep=self.enable_sleep)
+            batch_wait_timeout_ms=self.batch_wait_timeout_ms)
 
 
 def update_llm_args_with_extra_dict(

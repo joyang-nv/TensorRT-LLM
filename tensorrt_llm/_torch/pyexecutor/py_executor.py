@@ -156,8 +156,7 @@ class PyExecutor:
                  kv_cache_transceiver: Optional[KvCacheTransceiver] = None,
                  guided_decoder: Optional[GuidedDecoder] = None,
                  garbage_collection_gen0_threshold: Optional[int] = None,
-                 start_worker: bool = True,
-                 virtual_memory_pools: Optional[dict] = None):
+                 start_worker: bool = True):
         super(PyExecutor, self).__init__()
         self.device_id = torch.cuda.current_device()
 
@@ -178,7 +177,6 @@ class PyExecutor:
         self.guided_decoder = guided_decoder
         self.dist = dist
         self.disable_overlap_scheduler = disable_overlap_scheduler
-        self.virtual_memory_pools = virtual_memory_pools
 
         # enqueue and _fetch_new_requests used data
         self.active = True
@@ -378,11 +376,6 @@ class PyExecutor:
         del self.model_engine
         if self.draft_model_engine is not None:
             del self.draft_model_engine
-        if self.virtual_memory_pools is not None:
-            keys = list(self.virtual_memory_pools.keys())
-            for key in keys:
-                logger.debug("Freeing pool %s", key)
-                del self.virtual_memory_pools[key]
 
     def can_enqueue_requests(self) -> bool:
         """
