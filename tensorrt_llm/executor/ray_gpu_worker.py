@@ -62,7 +62,7 @@ class RayWorkerWrapper:
 
         torch.cuda.set_device(local_gpu)
 
-        self.worker = worker_cls(**worker_kwargs)
+        self.worker = worker_cls(device_id=local_gpu, **worker_kwargs)
 
     def submit(self, request: GenerationRequest) -> GenerationResult:
         return self.worker.submit(request)
@@ -104,12 +104,14 @@ class RayGPUWorker(GenerationExecutor):
 
     def __init__(
         self,
+        device_id: int,
         engine: Union[Path, Engine],
         executor_config: Optional[tllm.ExecutorConfig] = None,
         batched_logits_processor: Optional[BatchedLogitsProcessor] = None,
         postproc_worker_config: Optional[PostprocWorkerConfig] = None,
         is_llm_executor: Optional[bool] = None,
         lora_config: Optional[LoraConfig] = None,
+        garbage_collection_gen0_threshold: Optional[int] = None,
     ) -> None:
         postproc_config = postproc_worker_config or PostprocWorkerConfig()
         super().__init__(
@@ -119,13 +121,21 @@ class RayGPUWorker(GenerationExecutor):
         )
 
         self.engine = None
+        self.device_id = device_id
         self.rank = torch.distributed.get_rank()
         self.global_rank = torch.distributed.get_world_size()
+
+        # mapping: client_id from Proxy -> request_id returned from runtime backend
+        self._client_id_to_request_id: Dict[int, int] = {}
 
         self._executor_config = executor_config
         self._is_pytorch_backend = getattr(self._executor_config, "backend",
                                            None) == "pytorch"
         assert self._is_pytorch_backend
+
+        if self.global_rank > 1:
+            from tensorrt_llm.logger import logger
+            logger.set_rank(self.global_rank)
 
         if isinstance(engine, list):
             engine = engine[self.rank]
@@ -137,6 +147,17 @@ class RayGPUWorker(GenerationExecutor):
             processor_batched=batched_logits_processor, replicate=False)
 
         def _create_engine():
+            # Make sure C++ executor would use same devices/ranks as py_executor
+            global_rank = torch.distributed.get_rank()
+            world_size = torch.distributed.get_world_size()
+
+            comm_ranks = [None] * world_size
+            device_ids = [None] * world_size
+            torch.distributed.all_gather_object(comm_ranks, global_rank)
+            torch.distributed.all_gather_object(device_ids, self.device_id)
+            executor_config.parallel_config = tllm.ParallelConfig(
+                participant_ids=comm_ranks, device_ids=device_ids)
+
             if isinstance(engine, Engine):
                 return tllm.Executor(engine.engine,
                                      json.dumps(engine.config.to_dict(),
@@ -157,6 +178,8 @@ class RayGPUWorker(GenerationExecutor):
                     create_py_executor
                 create_executor = create_py_executor
                 args["lora_config"] = lora_config
+                args[
+                    "garbage_collection_gen0_threshold"] = garbage_collection_gen0_threshold
             else:
                 raise ValueError(
                     f"Unsupported backend config: {executor_config.backend}")
@@ -168,8 +191,6 @@ class RayGPUWorker(GenerationExecutor):
         self._lora_manager: Optional[LoraManager] = None
         self._prompt_adapter_manager: Optional[PromptAdapterManager] = None
         self._runtime_model_config: Optional[ModelConfig] = None
-        # mapping: client_id -> request_id returned from runtime backend
-        self._client_id_to_request_id: Dict[int, int] = {}
         if self.rank == 0 and isinstance(self.engine, tllm.Executor):
             if isinstance(engine, Engine):
                 engine_config = engine.config
@@ -179,13 +200,23 @@ class RayGPUWorker(GenerationExecutor):
             self._runtime_model_config = _engine_config_to_model_config(
                 engine_config)
             if engine_config.build_config.plugin_config.lora_plugin:
-                self._lora_manager = LoraManager()
+                # TODO(azuker): Passing peft cache manager to LoraManager is used for LoRA optimization
+                # (see LoraManager constructor docstring). Getting the peft cache manager from this
+                # point in the TRT flow is currently not supported (it's at the CPP
+                # Executor->ExecutorImpl->TrtGptModel->mPeftCacheManager) therefore for now this LoRA
+                # optimization is not available in TRT-python flow.
+                self._lora_manager = LoraManager(cpp_peft_cache_manager=None)
             if engine_config.build_config.max_prompt_embedding_table_size > 0:
                 self._prompt_adapter_manager = PromptAdapterManager()
 
         if getattr(executor_config, "backend",
                    "") == "pytorch" and lora_config is not None:
-            self._lora_manager = LoraManager()
+            from tensorrt_llm._torch.pyexecutor.resource_manager import \
+                ResourceManagerType
+            peft_cache_manager = self.engine.resource_manager.resource_managers.get(
+                ResourceManagerType.PEFT_CACHE_MANAGER)
+            self._lora_manager = LoraManager(
+                cpp_peft_cache_manager=peft_cache_manager.impl)
             lora_model_config = self.engine.model_engine.lora_model_config
             assert lora_model_config is not None
             self._lora_model_config = lora_model_config
@@ -221,24 +252,23 @@ class RayGPUWorker(GenerationExecutor):
                         request: GenerationRequest,
                         result_wait_queue: Queue | None = None) -> int:
         assert request.id is not None
-
+        py_lora_path = None
         if self._lora_manager is not None and request.lora_request is not None:
+            adapter_in_cache = self._lora_manager.is_adapter_in_cpu_cache(
+                request.lora_request.adapter_id)
             self._load_lora_adapter(request.lora_request)
             uid = str(request.lora_request.adapter_id)
             lora_config = tllm.LoraConfig(
                 task_id=request.lora_request.adapter_id,
-                weights=self._lora_manager.cpp_lora_weights[uid],
+                weights=self._lora_manager.cpp_lora_weights[uid]
+                if not adapter_in_cache else None,
                 config=self._lora_manager.cpp_lora_config[uid])
+            py_lora_path = request.lora_request.lora_path
         else:
             lora_config = None
 
         prompt_token_ids = copy.deepcopy(request.prompt_token_ids)
         prompt_tuning_config = None
-        multimodal_embedding = None
-        mrope_config = None
-        # TODO: Request class has refactored for v1.0, need update.
-        # if request.multimodal_embedding is not None:
-        #     multimodal_embedding = request.multimodal_embedding
         if request.prompt_adapter_request is not None:
             self._load_prompt_adapter(request.prompt_adapter_request)
             uid = str(request.prompt_adapter_request.adapter_id)
@@ -249,9 +279,22 @@ class RayGPUWorker(GenerationExecutor):
             prompt_token_ids = list(range(
                 vocab_size, vocab_size + pa_length)) + prompt_token_ids
 
-        # TODO: Request class has refactored for v1.0, need update.
-        # if request.mrope_config is not None:
-        #     mrope_config = tllm.MropeConfig(**request.mrope_config)
+        # MULTIMODAL
+        # NOTE: Since, we only support PyTorch backend for multimodal, we will send multimodal_data through the 'py_multimodal_data' field
+        # except `multimodal_input` as it needs to go through the C++ runtime.
+        multimodal_input = None
+        if request.multimodal_params is not None and request.multimodal_params.has_content(
+        ):
+            if request.multimodal_params.multimodal_input is not None:
+                multimodal_input = tllm.MultimodalInput(
+                    multimodal_hashes=request.multimodal_params.
+                    multimodal_input.multimodal_hashes,
+                    multimodal_positions=request.multimodal_params.
+                    multimodal_input.multimodal_positions,
+                    multimodal_lengths=request.multimodal_params.
+                    multimodal_input.multimodal_lengths)
+            # NOTE: Setting to None here to avoid sending multimodal_input again through the 'py_multimodal_data' field
+            request.multimodal_params.multimodal_input = None
 
         context_phase_params = None
         request_type = tllm.RequestType.REQUEST_TYPE_CONTEXT_AND_GENERATION
@@ -322,8 +365,10 @@ class RayGPUWorker(GenerationExecutor):
                 embedding_bias=request.sampling_params.embedding_bias,
                 lora_config=lora_config,
                 prompt_tuning_config=prompt_tuning_config,
-                multimodal_embedding=multimodal_embedding,
-                mrope_config=mrope_config,
+                multimodal_input=multimodal_input,
+                # NOTE: `multimodal_embedding` and `mrope_config` will be in MultimodalParams.multimodal_data. And this will be handled below by `py_multimodal_data`.
+                multimodal_embedding=None,
+                mrope_config=None,
                 logits_post_processor_name=(
                     tllm.Request.BATCHED_POST_PROCESSOR_NAME
                     if request.sampling_params.apply_batched_logits_processor
@@ -333,6 +378,13 @@ class RayGPUWorker(GenerationExecutor):
                 kv_cache_retention_config=request.kv_cache_retention_config,
                 context_phase_params=context_phase_params,
                 type=request_type)
+            executor_request.py_lora_path = py_lora_path
+
+            if self._is_pytorch_backend and request.multimodal_params is not None:
+                if request.multimodal_params.multimodal_data is not None:
+                    # NOTE: Deserialize SharedTensor handle to actual tensor
+                    request.multimodal_params.to_tensor("multimodal_data")
+                    executor_request.py_multimodal_data = request.multimodal_params.multimodal_data
 
             if self._is_pytorch_backend and request.sampling_params.logits_processor:
                 # For PyTorch backend, we attach logits processors as a dynamic Python attribute
@@ -340,6 +392,10 @@ class RayGPUWorker(GenerationExecutor):
                 lp = request.sampling_params.logits_processor
                 executor_request.py_logits_post_processors = lp if isinstance(
                     lp, list) else [lp]
+
+            executor_request.py_scheduling_params = None
+            if self._is_pytorch_backend and request.scheduling_params is not None:
+                executor_request.py_scheduling_params = request.scheduling_params
 
             if request.query_token_ids is not None:
                 # pytorch star attention workflow
