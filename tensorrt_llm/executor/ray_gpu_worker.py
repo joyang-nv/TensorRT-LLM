@@ -31,6 +31,16 @@ __all__ = [
 
 @ray.remote
 class RayWorkerWrapper:
+    # Refer to https://github.com/NVIDIA-NeMo/RL/blob/faad02113c3c502437ccb339cb848796334aedd9/nemo_rl/models/policy/dtensor_policy_worker_v2.py#L95
+    def __repr__(self) -> str:
+        """Customizes the actor's prefix in the Ray logs.
+
+        This makes it easier to identify which worker is producing specific log messages.
+        """
+        if torch.distributed.is_initialized():
+            return f"{self.__class__.__qualname__}[rank={torch.distributed.get_rank()}]"
+        else:
+            return f"{self.__class__.__qualname__}"
 
     def __init__(self, worker_cls, worker_kwargs, world_size, rank):
         self.master_address = os.environ["MASTER_ADDR"]

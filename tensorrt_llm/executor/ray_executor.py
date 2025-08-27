@@ -15,8 +15,7 @@ from .executor import GenerationExecutor
 from .postproc_worker import PostprocWorkerConfig
 from .ray_gpu_worker import RayGPUWorker, RayWorkerWrapper
 from .request import GenerationRequest
-from .result import (GenerationResult, IterationResult, RayAsyncQueue,
-                     RaySyncQueue)
+from .result import GenerationResult, RayAsyncQueue, RaySyncQueue
 
 __all__ = [
     "RayExecutor",
@@ -180,23 +179,9 @@ class RayExecutor(GenerationExecutor):
 
     @property
     def enable_postprocess_parallel(self) -> bool:
-        raise NotImplementedError(
-            "enable_postprocess_parallel is not implemented")
-
-    def get_stats(self, timeout: float) -> List[dict]:
-        raise NotImplementedError("get_stats is not implemented")
-
-    def aget_stats(self, timeout: float) -> IterationResult:
-        raise NotImplementedError("aget_stats is not implemented")
-
-    def get_kv_events(self, timeout: float) -> List[dict]:
-        raise NotImplementedError("get_kv_events is not implemented")
-
-    def aget_kv_events(self, timeout=None) -> IterationResult:
-        raise NotImplementedError("aget_kv_events is not implemented")
-
-    def wait_first_completed(self, futures: List[GenerationResult]):
-        raise NotImplementedError("wait_first_completed is not implemented")
+        ret = super().enable_postprocess_parallel
+        assert ret == False, "Postprocess parallel is not supported in RayExecutor"
+        return ret
 
     def _get_placement_group(self,
                              tp_size: int) -> Tuple[PlacementGroup, List[int]]:
