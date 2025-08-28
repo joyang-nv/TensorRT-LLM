@@ -122,7 +122,6 @@ class BaseLLM:
                  **kwargs: Any) -> None:
 
         self._executor_cls = kwargs.pop("executor_cls", GenerationExecutor)
-        self._orchestrator_type = kwargs.pop("orchestrator_type", None)
         self._llm_id = None
 
         log_level = logger.level
@@ -130,6 +129,9 @@ class BaseLLM:
 
         try:
             backend = kwargs.get('backend', None)
+            self._orchestrator_type = kwargs.pop(
+                "orchestrator_type", "ray" if backend == "pytorch" else None)
+
             if backend == "pytorch":
                 logger.info("Using LLM with PyTorch backend")
                 llm_args_cls = TorchLlmArgs
